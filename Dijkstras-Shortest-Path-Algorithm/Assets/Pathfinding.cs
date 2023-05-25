@@ -4,155 +4,27 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Unity.VisualScripting.Antlr3.Runtime.Tree;
+using UnityEditor;
 using UnityEngine;
+using static UnityEditor.Progress;
 
 public class Pathfinding : MonoBehaviour
 {
     public Transform startTransform;
     public Transform endTransform;
     public float cellSize = 1;
+    public float allowedIterations = 100; //Infinite while prevention.
 
     // Start is called before the first frame update
     void Start()
     {
-        //FindShortestPath(startTransform, endTransform);
-        Invoke("Delay",2f);
-    }
-    private void Delay()
-    {
-        StartCoroutine(FindShortestPathDelayed(startTransform, endTransform, 0.25f));
-
+        FindShortestPath(startTransform, endTransform);
     }
 
     // Update is called once per frame
     void Update()
     {
 
-    }
-
-    public void FindShortestPath(Transform start, Transform goal)
-    {
-        Vector3[,] waypoints = null;
-        Dictionary<Vector3, float> distances = new Dictionary<Vector3, float>();
-        Dictionary<Vector3, Vector3> previous = new Dictionary<Vector3, Vector3>();
-        List<Vector3> unvisitedWaypoints = new List<Vector3>();
-        Vector3 currentWaypoint = Vector3.zero;
-        List<Vector3> shortestPath = new List<Vector3>();
-        List<GameObject> cubes = new List<GameObject>();//remove later
-        int moveCost = 1;
-
-        Vector3 size = new Vector3(Mathf.Abs(goal.position.x - start.position.x), 0f, Mathf.Abs(goal.position.z - start.position.z));
-        int numWidthCells = Mathf.CeilToInt(size.x);
-        int numLengthCells = Mathf.CeilToInt(size.z);
-        waypoints = new Vector3[numWidthCells, numLengthCells];
-        Vector3 startPoint = new Vector3(Mathf.Min(start.position.x, goal.position.x), start.position.y, Mathf.Min(start.position.z, goal.position.z));
-        Vector3 currentPos = startPoint;
-
-        for (int row = 0; row < numWidthCells; row++)
-        {
-            for (int col = 0; col < numLengthCells; col++)
-            {
-                Vector3 v = new Vector3(currentPos.x + row + cellSize / 2, currentPos.y, currentPos.z + col + cellSize / 2);
-                waypoints[row, col] = v;
-                //remove cubes related code later
-                //only used for visualization
-                GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                go.transform.localScale = new Vector3(0.25f, 0.25f, 0.25f);
-                Instantiate(go, v, Quaternion.identity);
-                cubes.Add(go);
-            }
-        }
-        //Initialize waypoint distances as 0 for start and infinite for others
-        //set them as unvisited
-        foreach (Vector3 waypoint in waypoints)
-        {
-            if (distances.Count == 0)
-            {
-                distances.Add(waypoint, 0);
-                //Debug.Log("Added start waypoint with distance 0");
-                continue;
-            }
-            distances.Add(waypoint, Mathf.Infinity);
-            //Debug.Log("Added waypoint with distance infinite");
-            unvisitedWaypoints.Add(waypoint);
-        }
-        currentWaypoint = distances.Aggregate((l, r) => l.Value < r.Value ? l : r).Key;
-        shortestPath.Add(currentWaypoint);
-
-        while (unvisitedWaypoints.Count > 0)
-        {
-            //determining unvisited neighbours
-            List<Vector3> unvisitedNeighbours = new List<Vector3>();
-            foreach (Vector3 neighbour in GetNeighbours(waypoints, currentWaypoint))
-            {
-                //if (!unvisitedWaypoints.Contains(neighbour))
-                //    continue;
-                unvisitedNeighbours.Add(neighbour);
-            }
-
-            foreach (Vector3 neighbour in unvisitedNeighbours)
-            {
-                List<Vector3> neighboursOfNeighbour = new List<Vector3>();
-                neighboursOfNeighbour = GetNeighbours(waypoints, neighbour);
-                float dist = Mathf.Infinity;
-                foreach (Vector3 l_neighbour in neighboursOfNeighbour)
-                {
-                    if (distances[l_neighbour] != Mathf.Infinity && (distances[l_neighbour] < dist))
-                    {
-                        dist = distances[l_neighbour];
-                        previous[neighbour] = l_neighbour;
-                        distances[neighbour] = distances[previous[neighbour]] + moveCost;
-                    }
-                    //found the smallest value
-                }
-                //found neighbour of neighbour which has a set distance
-                //and has the smallest set distance
-
-            }
-            Vector3 nextWaypoint = GetWaypointOfLowestDistance(unvisitedWaypoints, distances);
-            unvisitedWaypoints.Remove(currentWaypoint);
-            currentWaypoint = nextWaypoint;
-            shortestPath.Add(currentWaypoint);
-            float estimateDistance = Vector3.Distance(currentWaypoint, goal.position);
-            if (estimateDistance < moveCost)
-            {
-                Debug.Log("Ended search");
-                goto stopSearch;
-
-            }
-            #region Original pathing
-            ////determine distance to neighbour
-            //foreach (Vector3 neighbour in unvisitedNeighbours)
-            //{
-            //    float newDistance = moveCost + distances[currentWaypoint];
-            //    if (newDistance < distances[neighbour])
-            //    {
-            //        distances[neighbour] = newDistance; //set distance
-            //        previous[neighbour] = currentWaypoint; //update previous
-            //    }
-            //}
-            //Vector3 nextWaypoint = GetWaypointOfLowestDistance(unvisitedNeighbours, distances);
-
-            //currentWaypoint = nextWaypoint;
-            //unvisitedWaypoints.Remove(currentWaypoint);
-            //shortestPath.Add(currentWaypoint);
-            //float estimateDistance = Vector3.Distance(currentWaypoint, goal.position);
-            //if (estimateDistance < moveCost)
-            //{
-            //    Debug.Log("Ended search");
-            //    goto stopSearch;
-
-            //}
-            #endregion
-        }
-    stopSearch:
-
-        foreach (var item in shortestPath)
-        {
-            Debug.Log($"Waypoint {shortestPath.IndexOf(item) + 1} is {item} with distance {distances[item]}");
-            Collider[] co = Physics.OverlapSphere(item, 0.25f);
-            co[0].GetComponent<MeshRenderer>().material.color = Color.blue;
-        }
     }
 
     private int[] FindIndicesIn2DArray(Vector3[,] array, Vector3 t)
@@ -179,39 +51,56 @@ public class Pathfinding : MonoBehaviour
         Vector3 waypoint = Vector3.zero;
         foreach (KeyValuePair<Vector3, float> item in dict)
         {
-            if (waypoints.Contains(item.Key) && item.Value < dist)
+            if (waypoints.Contains(item.Key))
             {
+                //Debug.Log($"{item.Key} is in dictionary " + dict);
+                if (item.Value < dist)
+                {
                 dist = item.Value;
                 waypoint = item.Key;
+                }
             }
         }
+        //Debug.Log(waypoint);
         return waypoint;
     }
     private List<Vector3> GetNeighbours(Vector3[,] array, Vector3 v)
     {
         List<Vector3> neighbours = new List<Vector3>();
-        var col = FindIndicesIn2DArray(array, v)[0];
-        var row = FindIndicesIn2DArray(array, v)[1];
-        //Debug.Log($"array with index 0 {index[0]} and index 1 {index[1]}");
-        if (row < array.GetLength(0) - 1)//grab top neighbour
+        var x = FindIndicesIn2DArray(array, v)[0];
+        var y = FindIndicesIn2DArray(array, v)[1];
+        //Debug.Log(x + ", "+ y);
+        if (y < array.GetLength(1) - 1)//grab top neighbour
         {
-            neighbours.Add(array[row + 1, col]);
-            //Debug.Log($"top neighbour is {array[row + 1, col]}");
+            neighbours.Add(array[x, y + 1]);
         }
-        if (col < (array.GetLength(1) - 1))//grab right neighbour
+        if (x < (array.GetLength(0) - 1))//grab right neighbour
         {
-            neighbours.Add(array[row, col + 1]);
+            neighbours.Add(array[x + 1, y]);
         }
-        if (row > 0) //grab bottom Neighbour
+        if (y > 0) //grab bottom Neighbour
         {
-            neighbours.Add(array[row - 1, col]);
+            neighbours.Add(array[x, y - 1]);
         }
-        if (col > 0) //grab left neightbour
+        if (x > 0) //grab left neightbour
         {
-            neighbours.Add(array[col - 1, row]);
+            neighbours.Add(array[x - 1, y]);
         }
         return neighbours;
     }
+    private List<Vector3> GetNodesOfDistance(List<Vector3> nodes,Dictionary<Vector3,float> dict, float dist)
+    {
+        List<Vector3> nodesOfDist = new List<Vector3>();
+        foreach (Vector3 node in nodes)
+        {
+            if (dict[node] == dist)
+            {
+                nodesOfDist.Add(node);
+            }
+        }
+        return nodesOfDist;
+    }
+
     private void OnDrawGizmos()
     {
         Gizmos.color = Color.black;
@@ -240,30 +129,35 @@ public class Pathfinding : MonoBehaviour
             currentPos += Vector3.forward * cellSize;
         }
     }
-    public IEnumerator FindShortestPathDelayed(Transform start, Transform goal, float delay)
+    
+    public List<Vector3> FindShortestPath(Transform start, Transform goal)
     {
-        Vector3[,] waypoints = null;
+        Vector3[,] nodes = null;
         Dictionary<Vector3, float> distances = new Dictionary<Vector3, float>();
         Dictionary<Vector3, Vector3> previous = new Dictionary<Vector3, Vector3>();
-        List<Vector3> unvisitedWaypoints = new List<Vector3>();
-        Vector3 currentWaypoint = Vector3.zero;
+        List<Vector3> unvisitedNodes = new List<Vector3>();
+        Vector3 currentNode = Vector3.zero;
         List<Vector3> shortestPath = new List<Vector3>();
         List<GameObject> cubes = new List<GameObject>();//remove later
         int moveCost = 1;
+        int iterationNr = 0;
 
         Vector3 size = new Vector3(Mathf.Abs(goal.position.x - start.position.x), 0f, Mathf.Abs(goal.position.z - start.position.z));
         int numWidthCells = Mathf.CeilToInt(size.x);
         int numLengthCells = Mathf.CeilToInt(size.z);
-        waypoints = new Vector3[numWidthCells, numLengthCells];
+        nodes = new Vector3[numWidthCells, numLengthCells];
         Vector3 startPoint = new Vector3(Mathf.Min(start.position.x, goal.position.x), start.position.y, Mathf.Min(start.position.z, goal.position.z));
         Vector3 currentPos = startPoint;
+        List<Vector3> openNodes = new List<Vector3>();
+        List<Vector3> interestedNodes = new List<Vector3>();
+        List<Vector3> closedNodes = new List<Vector3>();
 
         for (int row = 0; row < numWidthCells; row++)
         {
             for (int col = 0; col < numLengthCells; col++)
             {
                 Vector3 v = new Vector3(currentPos.x + row + cellSize / 2, currentPos.y, currentPos.z + col + cellSize / 2);
-                waypoints[row, col] = v;
+                nodes[row, col] = v;
                 //remove cubes related code later
                 //only used for visualization
                 GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -275,75 +169,81 @@ public class Pathfinding : MonoBehaviour
 
         //Initialize waypoints with distances and marking as unvisited
         //distance 0 for start, infinite for rest
-        foreach (Vector3 waypoint in waypoints)
+        foreach (Vector3 node in nodes)
         {
             if (distances.Count == 0)
             {
-                distances.Add(waypoint, 0);
+                distances.Add(node, 0);
+                currentNode = node;
+                openNodes.Add(currentNode);
                 //Debug.Log("Added start waypoint with distance 0");
                 continue;
             }
-            distances.Add(waypoint, Mathf.Infinity);
+            distances.Add(node, Mathf.Infinity);
             //Debug.Log("Added waypoint with distance infinite");
-            unvisitedWaypoints.Add(waypoint);
+            unvisitedNodes.Add(node);
         }
-        currentWaypoint = distances.Aggregate((l, r) => l.Value < r.Value ? l : r).Key;
-        shortestPath.Add(currentWaypoint);
-        while (unvisitedWaypoints.Count > 0)
+        currentNode = distances.Aggregate((l, r) => l.Value < r.Value ? l : r).Key;
+        shortestPath.Add(currentNode);
+        
+        while (iterationNr < allowedIterations)
         {
-            //determining unvisited neighbours
-            List<Vector3> unvisitedNeighbours = new List<Vector3>();
-            foreach (Vector3 neighbour in GetNeighbours(waypoints, currentWaypoint))
+            iterationNr++;
+            Vector3 lowestDistNode = GetWaypointOfLowestDistance(openNodes, distances);
+            if (lowestDistNode == Vector3.zero)
             {
-                if (!unvisitedWaypoints.Contains(neighbour))
-                    continue;
-                unvisitedNeighbours.Add(neighbour);
+                continue;
             }
-
-            foreach (Vector3 neighbour in unvisitedNeighbours)
+            float lowestDist = distances[lowestDistNode];
+            //find open nodes of lowest distance
+            foreach (Vector3 node in GetNodesOfDistance(openNodes, distances, lowestDist))
             {
-                List<Vector3> neighboursOfNeighbour = new List<Vector3>();
-                neighboursOfNeighbour = GetNeighbours(waypoints, neighbour);
-                float dist = Mathf.Infinity;
-                foreach (Vector3 l_neighbour in neighboursOfNeighbour)
+                interestedNodes.Add(node);
+                openNodes.Remove(node);
+            }
+            foreach (Vector3 node in interestedNodes)
+            {
+                currentNode = node;
+                float distToGoal = Vector3.Distance(goal.position, currentNode);
+                closedNodes.Add(node);
+                if (distToGoal <= (moveCost / 2))
                 {
-                    if (distances[l_neighbour] != Mathf.Infinity && (distances[l_neighbour] < dist))
-                    {
-                        dist = distances[l_neighbour];
-                        previous[neighbour] = l_neighbour;
-                        Debug.Log($"previous of {neighbour} is {l_neighbour}");
-                        distances[neighbour] = distances[previous[neighbour]] + moveCost;
-                    }
-                    //found the smallest value
+                    goto reachedGoal;
                 }
-                //found neighbour of neighbour which has a set distance
-                //and has the smallest set distance
+                List<Vector3> level1Neighbors = GetNeighbours(nodes, node);
+                foreach (Vector3 l1N in level1Neighbors)
+                {
+                    if (!openNodes.Contains(l1N) && !closedNodes.Contains(l1N))
+                    {
+                        openNodes.Add(l1N);
+                    }
+                    List<Vector3> level2Neighbors = GetNeighbours(nodes, l1N);
+                    Vector3 lowestDistL2N = GetWaypointOfLowestDistance(level2Neighbors, distances);
+                    if (distances[lowestDistL2N] < distances[l1N])
+                    {
+                        distances[l1N] = distances[lowestDistL2N] + moveCost;
+                        previous[l1N] = lowestDistL2N;
+                    }
+                }
+            }
 
-            }
-            Vector3 nextWaypoint = GetWaypointOfLowestDistance(unvisitedWaypoints, distances);
-            unvisitedWaypoints.Remove(currentWaypoint);
-            currentWaypoint = nextWaypoint;
-            if (!shortestPath.Contains(previous[currentWaypoint]))
-            {
-                shortestPath.Add(previous[currentWaypoint]);
-            }
-            float estimateDistance = Vector3.Distance(currentWaypoint, goal.position);
-            //yield return new WaitForSeconds(1f);
-            if (estimateDistance < moveCost)
-            {
-                Debug.Log("Ended search");
-                goto stopSearch;
-
-            }
-            
         }
-    stopSearch:;
-        foreach (var item in shortestPath)
+    reachedGoal:
+        iterationNr = 0;
+        List<Vector3> path = new List<Vector3>();
+        
+        while (previous.ContainsKey(currentNode))
         {
-            yield return new WaitForSeconds(1);
-            Debug.Log($"Waypoint {shortestPath.IndexOf(item) + 1} is {item} with distance {distances[item]}");
-            Collider[] co = Physics.OverlapSphere(item, 0.25f);
-            co[0].GetComponent<MeshRenderer>().material.color = Color.blue;
+            path.Add(currentNode);
+            currentNode = previous[currentNode];
         }
+        path.Add(currentNode);
+        foreach (var item in path)
+        {
+            Collider[] coll = Physics.OverlapSphere(item, 0.25f);
+            coll[0].GetComponent<MeshRenderer>().material.color = Color.yellow;
+        }
+        path.Reverse();
+        return path;
     }
 }
